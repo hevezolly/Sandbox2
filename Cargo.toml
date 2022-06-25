@@ -1,0 +1,15 @@
+[package]
+name = "sandbox2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dashmap = "5.3.4"
+num = "0.4.0"
+bresenham = "0.1.1"
+winit_input_helper = "0.12.0"
+winit = "0.26.1"
+pixels = "0.9.0"
+rand="0.8.5"
