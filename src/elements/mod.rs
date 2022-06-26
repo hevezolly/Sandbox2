@@ -5,7 +5,7 @@ use rand::{random, thread_rng, Rng};
 
 use crate::field::{chunk_context::ChunkContext, neighbours::Neighbours};
 
-use self::{movable_solids::MovableSolid, liquid::Liquid, elements_convert::{sand_convert, water_convert}, solid::Solid};
+use self::{movable_solids::MovableSolid, liquid::Liquid, elements_convert::{sand_convert}, solid::Solid};
 
 pub mod movable_solids;
 pub mod liquid;
@@ -13,18 +13,19 @@ mod elements_convert;
 pub mod solid;
 
 #[derive(Clone, Copy)]
-pub enum State{
-    Solid,
-    Liquid
+pub enum ElementType{
+    Sand, 
+    WetSand(isize),
+    Water,
+    Oil,
+    Block
 }
 
 #[derive(Clone, Copy)]
 pub enum Element{
-    Sand(MovableSolid),
-    WetSand(MovableSolid, isize),
-    Water(Liquid),
-    Oil(Liquid),
-    Block(Solid),
+    MovableSolid(MovableSolid, ElementType),
+    Liquid(Liquid, ElementType),
+    Solid(Solid, ElementType),
 }
 
 pub trait ElementData{
@@ -40,7 +41,7 @@ const WET_SAND_DRY_TIME: isize = 600;
 impl Element {
 
     pub fn sand() -> Element{
-        Element::Sand(MovableSolid{ is_falling: true, 
+        Element::MovableSolid(MovableSolid{ is_falling: true, 
             stable_time: 0, 
             flow_coefficient: 2.,
             move_time: 20,
@@ -49,11 +50,11 @@ impl Element {
             density: 10.,
             slip_through_prob: 0.,
             keep_alive_extra_time: None,
-         })
+         }, ElementType::Sand)
     }
 
     pub fn water() -> Element{
-        Element::Water(Liquid{
+        Element::Liquid(Liquid{
             stable_time: 0,
             move_time: 100,
             disperse_distance: 10,
@@ -61,11 +62,11 @@ impl Element {
             density: 7.,
             slip_through_prob: 0.02,
             keep_alive_extra_time: None,
-        })
+        }, ElementType::Water)
     }
 
     pub fn wet_sand() -> Element{
-        Element::WetSand(MovableSolid{ is_falling: true, 
+        Element::MovableSolid(MovableSolid{ is_falling: true, 
             stable_time: 0, 
             flow_coefficient: 0.3,
             move_time: 10,
@@ -74,11 +75,11 @@ impl Element {
             density: 10.1,
             slip_through_prob: 0.,
             keep_alive_extra_time: Some(WET_SAND_DRY_TIME),
-         }, 0)
+         }, ElementType::WetSand(0))
     }
 
     pub fn oil() -> Element{
-        Element::Oil(Liquid{
+        Element::Liquid(Liquid{
             stable_time: 0,
             move_time: 60,
             disperse_distance: 2,
@@ -86,92 +87,95 @@ impl Element {
             density: 2.,
             slip_through_prob: 0.,
             keep_alive_extra_time: None,
-        })
+        }, ElementType::Oil)
     }
 
     pub fn block() -> Element{
-        Element::Block(Solid{
+        Element::Solid(Solid{
             density: 50.,
-        })
+        }, ElementType::Block)
+    }
+
+    pub fn get_type(&self) -> ElementType{
+        match self {
+            Element::MovableSolid(_, t) => *t,
+            Element::Liquid(_, t) => *t,
+            Element::Solid(_, t) => *t,
+        }
     }
 
     pub fn get_color(&self) -> [u8; 4]{
-        match self {
-            Element::Sand(d) => [0xff, 0xff, 0x00, 0xff],
-            Element::Water(d) => [0x00, 0x50, 0xff, 0xff],
-            Element::WetSand(_, _) => [0xb3, 0xb3, 0x00, 0xff],
-            Element::Oil(_) => [0x33, 0x33, 0x10, 0xff],
-            Element::Block(_) => [0xb3, 0xb3, 0xb3, 0xff],
+        match self.get_type() {
+            ElementType::Sand => [0xff, 0xff, 0x00, 0xff],
+            ElementType::Water => [0x00, 0x50, 0xff, 0xff],
+            ElementType::WetSand(_) => [0xb3, 0xb3, 0x00, 0xff],
+            ElementType::Oil => [0x33, 0x33, 0x10, 0xff],
+            ElementType::Block => [0xb3, 0xb3, 0xb3, 0xff],
         }
     }
 
     pub fn update(self, position: (isize, isize), field_access: &mut ChunkContext){
         match self {
-            Element::Sand(data) => data.update(position, field_access, sand_convert),
-            Element::Water(data) => data.update(position, field_access, water_convert),
-            Element::WetSand(data, t) => data.update(position, field_access, |d, p, f| {
+            Element::MovableSolid(data, ElementType::WetSand(t)) => data.update(position, field_access, |d, p, f| {
                 let new_t = if Neighbours::direct_of(p).any(|n| {f.reachable_and_fitting(n, |e|{
-                    if let Some(Element::Water(_)) = e {true} else {false}
+                    if let Some(Element::Liquid(_, ElementType::Water)) = e {true} else {false}
                 })}) {0} else {t + 1};
                 if new_t >= WET_SAND_DRY_TIME {
                     Element::sand()
                 }
                 else {
-                    Element::WetSand(d, new_t)
+                    Element::MovableSolid(d, ElementType::WetSand(new_t))
                 }
             }),
-            Element::Oil(data) => data.update(position, field_access, |d, _, _| Element::Oil(d)),
-            Element::Block(d) => d.update(position, field_access, |d, _, _| Element::Block(d)),
+
+            Element::MovableSolid(data, ElementType::Sand) => data.update(position, field_access, sand_convert),
+
+            Element::MovableSolid(d, t) => 
+                d.update(position, field_access, |d,_,_| Element::MovableSolid(d, t)), 
+            Element::Solid(d, t) => 
+                d.update(position, field_access, |d,_,_| Element::Solid(d, t)), 
+            Element::Liquid(d, t) => 
+                d.update(position, field_access, |d,_,_| Element::Liquid(d, t)), 
         }
     }
 
     pub fn refresh(self) -> Element{
         match self {
-            Element::Sand(data) => Element::Sand(data.refresh()),
-            Element::Water(data) => Element::Water(data.refresh()),
-            Element::WetSand(data,t) => Element::WetSand(data.refresh(), t),
-            Element::Oil(d) => Element::Oil(d.refresh()),
-            Element::Block(d) => Element::Block(d),
+            Element::MovableSolid(d, t) => Element::MovableSolid(d.refresh(), t),
+            Element::Liquid(d, t) => Element::Liquid(d.refresh(), t),
+            Element::Solid(d, t) => Element::Solid(d.refresh(), t),
         }
     }
 
     pub fn density(&self) -> f64{
         match self {
-            Element::Sand(d) => d.density(),
-            Element::WetSand(d,_) => d.density(),
-            Element::Water(d) => d.density(),
-            Element::Oil(d) => d.density(),
-            Element::Block(d) => d.density(),
+            Element::MovableSolid(d, _) => d.density(),
+            Element::Liquid(d, _) => d.density(),
+            Element::Solid(d, _) => d.density(),
         }
     }
 
     pub fn solid(&self) -> Option<&Solid>{
         match self {
-            Element::Sand(_) => None,
-            Element::WetSand(_,_) => None,
-            Element::Water(_) => None,
-            Element::Oil(_) => None,
-            Element::Block(d) => Some(d),
+            Element::MovableSolid(d, _) => None,
+            Element::Liquid(d, _) => None,
+            Element::Solid(d, _) => Some(d),
         }
     }
     
     pub fn movable_solid(&self) -> Option<&MovableSolid>{
         match self {
-            Element::Sand(d) => Some(d),
-            Element::WetSand(d,_) => Some(d),
-            Element::Water(_) => None,
-            Element::Oil(_) => None,
-            Element::Block(_) => None,
+            Element::MovableSolid(d, _) => Some(d),
+            Element::Liquid(d, _) => None,
+            Element::Solid(d, _) => None,
         }
     }
 
     pub fn liquid(&self) -> Option<&Liquid> {
         match self {
-            Element::Sand(_) => None,
-            Element::WetSand(_,_) => None,
-            Element::Water(d) => Some(d),
-            Element::Oil(d) => Some(d),
-            Element::Block(_) => None,
+            Element::MovableSolid(d, _) => None,
+            Element::Liquid(d, _) => Some(d),
+            Element::Solid(d, _) => None,
         }
     }
 }
