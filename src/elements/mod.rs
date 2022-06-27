@@ -5,12 +5,13 @@ use rand::{random, thread_rng, Rng};
 
 use crate::field::{chunk_context::ChunkContext, neighbours::Neighbours};
 
-use self::{movable_solids::MovableSolid, liquid::Liquid, elements_convert::{sand_convert}, solid::Solid};
+use self::{movable_solids::MovableSolid, liquid::Liquid, elements_convert::{sand_convert}, solid::Solid, acid::acid_update};
 
 pub mod movable_solids;
 pub mod liquid;
 mod elements_convert;
 pub mod solid;
+mod acid;
 
 #[derive(Clone, Copy)]
 pub enum ElementType{
@@ -18,7 +19,9 @@ pub enum ElementType{
     WetSand(isize),
     Water,
     Oil,
-    Block
+    Acid(isize),
+    Block,
+    Glass
 }
 
 #[derive(Clone, Copy)]
@@ -36,7 +39,7 @@ pub trait ElementData{
     fn density(&self) -> f64;
 }
 
-const WET_SAND_DRY_TIME: isize = 600;
+const WET_SAND_DRY_TIME: isize = 700;
 
 impl Element {
 
@@ -51,6 +54,24 @@ impl Element {
             slip_through_prob: 0.,
             keep_alive_extra_time: None,
          }, ElementType::Sand)
+    }
+
+    pub fn acid() -> Element{
+        Element::Liquid(Liquid{
+        side: if thread_rng().gen_bool(0.5) {-1} else {1},
+        disperse_distance: 3,
+        move_time: 100,
+        keep_alive_extra_time: None,
+        density: 4.,
+        stable_time: 0,
+        slip_through_prob: 0.,
+        }, ElementType::Acid(5))
+    }
+
+    pub fn glass() -> Element{
+        Element::Solid(Solid{
+            density: 50.,
+        }, ElementType::Glass)
     }
 
     pub fn water() -> Element{
@@ -111,6 +132,8 @@ impl Element {
             ElementType::WetSand(_) => [0xb3, 0xb3, 0x00, 0xff],
             ElementType::Oil => [0x33, 0x33, 0x10, 0xff],
             ElementType::Block => [0xb3, 0xb3, 0xb3, 0xff],
+            ElementType::Acid(_) => [0x39, 0xe6, 0x00, 0xff],
+            ElementType::Glass => [0xb3, 0xff, 0xff, 0xff],
         }
     }
 
@@ -127,6 +150,8 @@ impl Element {
                     Element::MovableSolid(d, ElementType::WetSand(new_t))
                 }
             }),
+
+            Element::Liquid(data, ElementType::Acid(strength)) => acid_update(data, strength, position, field_access),
 
             Element::MovableSolid(data, ElementType::Sand) => data.update(position, field_access, sand_convert),
 

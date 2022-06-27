@@ -26,6 +26,7 @@ enum InputMessage{
     Scroll(isize),
     Number(usize),
     MousePosition(f32, f32),
+    FlipBoxes,
 }
 const CHUNK_NUMBER: (usize, usize) = (8, 8);
 
@@ -33,13 +34,13 @@ const SCALE_FACTOR: u32 = 6;
 
 const THREAD_NUMBER: usize = 16;
 
-const DRAW_BOXES: bool = true;
-
-const FPS: f32 = 120.;
+const FPS: f32 = 300.;
 
 fn main() -> Result<(), Box<dyn Error>> {
+
+    let mut draw_boxes: bool = false;
     
-    let elements = [||Element::wet_sand(), ||Element::sand(), ||Element::water(), ||Element::oil(), ||Element::block()];
+    let elements = [||Element::wet_sand(), ||Element::sand(), ||Element::water(), ||Element::oil(), ||Element::block(), ||Element::acid(), ||Element::glass()];
     
     let mut element_index:usize = 1;
 
@@ -75,6 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         
         let mut mouse_prev: Option<(usize, usize)> = None;
         let mut brush_size_prev: (usize, usize) = brush_size;
+        let mut prev_draw_boxes = draw_boxes;
         loop{
             
             let loop_start = Instant::now();
@@ -94,6 +96,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut spawn_cord = (0., 0.);
                 
                 let mut mouse_position = None;
+
+                
                 for input in inputs.into_iter(){
                     match input{
                         InputMessage::Click(x, y) => {
@@ -118,6 +122,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 mouse_position = Some(pos);
                             }
                         },
+                        InputMessage::FlipBoxes => {
+                             draw_boxes = !draw_boxes;
+                        }
                     }
                 }
 
@@ -160,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         color_func);
                 }
 
-                if DRAW_BOXES{
+                if prev_draw_boxes{
                     let color_func = |p| { match field.get(p){
                         Some(e) => e.get_color(),
                         None => [0x00,0x00,0x00,0xff],
@@ -175,7 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 
                 update_frame(frame, &mut field);
 
-                if DRAW_BOXES{
+                if draw_boxes{
                     previus_chunks.clear();
                     previus_rects.clear();
                     for b in field.get_chunks(){
@@ -195,6 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 mouse_prev = mouse_position;
                 brush_size_prev = brush_size;
+                prev_draw_boxes = draw_boxes;
 
             }
             let duration_sec = (Instant::now() - loop_start).as_secs_f32();
@@ -275,6 +283,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *can_send = false;
                         sender.send(InputMessage::Number(key_index)).ok();
                     }
+                }
+
+                if input.key_pressed(VirtualKeyCode::B){
+                    *can_send = false;
+                        sender.send(InputMessage::FlipBoxes).ok();
                 }
             }
         }
